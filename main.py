@@ -8,7 +8,6 @@ USER_ID = os.getenv("AFDIAN_USER_ID")
 TOKEN = os.getenv("AFDIAN_TOKEN")
 ORDER_API = "https://ifdian.net/api/open/query-order"
 SPONSOR_API = "https://ifdian.net/api/open/query-sponsor"
-
 def sign(params: str, ts: int) -> str:
     raw = f"{TOKEN}params{params}ts{ts}user_id{USER_ID}"
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
@@ -48,7 +47,10 @@ def this_month_user_ids():
                 break
             if o.get("status") != 2:
                 continue
-            ids[o["user_id"]] = ts
+            uid = o.get("user_id") or (o.get("user") or {}).get("user_id")
+            if not uid:
+                continue
+            ids[uid] = ts
 
         if stop:
             break
@@ -57,7 +59,7 @@ def this_month_user_ids():
         page += 1
 
     return ids
-def nicknames(user_ids: dict):
+def nickname_map(user_ids):
     nick_map, p = {}, 1
     while True:
         d = post(SPONSOR_API, {"page": p})
@@ -65,7 +67,11 @@ def nicknames(user_ids: dict):
         if not lst:
             break
         for s in lst:
-            nick_map[s["user_id"]] = s.get("user", {}).get("name") or s["user_id"]
+            user = s.get("user") or {}
+            uid = s.get("user_id") or user.get("user_id")
+            if not uid:
+                continue
+            nick_map.setdefault(uid, user.get("name") or uid)
         if p >= d.get("total_page", 1):
             break
         p += 1
@@ -73,7 +79,7 @@ def nicknames(user_ids: dict):
     return [nick_map.get(uid, uid) for uid in user_ids]
 if __name__ == "__main__":
     uids = this_month_user_ids()
-    names = nicknames(uids)
+    names = nickname_map(uids)
     os.makedirs('output/', exist_ok=True)
     with open("output/output.json", "w", encoding="utf-8") as f:
-        json.dump(names, f, ensure_ascii=False)
+        json.dump(names, f, ensure_ascii=False, indent=2)
